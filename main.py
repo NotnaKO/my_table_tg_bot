@@ -33,33 +33,72 @@ class Table:
     def news(self) -> str:
         return ''.join(checker.answer for checker in self.checkers)
 
+    def test(self) -> None:
+        gc.open_by_url(self.reference)
+
 
 def get_tables_from_user(context: ContextTypes.DEFAULT_TYPE):
+    """:returns two dictionaries with tables by name and tables by references"""
     if "tables_by_name" not in context.user_data:
         context.user_data["tables_by_name"] = dict()
         context.user_data["tables_by_ref"] = dict()
     return context.user_data["tables_by_name"], context.user_data["tables_by_ref"]
 
 
+NAME_CHOOSING, REF_CHOOSING = range(2)
+
+
+async def start_creating_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "Давайте создадим таблицу.(Для отмены введите /cancel)")
+    await update.effective_message.reply_text("Введите имя для таблицы")
+    return NAME_CHOOSING
+
+
+async def get_table_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text
+    tables_by_name = get_tables_from_user(context)[0]
+    if name in tables_by_name:
+        await update.effective_message.reply_text(
+            "Таблица с таким именем уже есть. Выберете другое имя")
+        return NAME_CHOOSING
+    context.user_data["current_name"] = name
+    await update.effective_message.reply_text("Теперь введите ссылку на таблицу")
+    return REF_CHOOSING
+
+
+async def get_table_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = update.message.text
+    tables_by_ref = get_tables_from_user(context)[1]
+    if ref in tables_by_ref:
+        await update.effective_message.reply_text(
+            f"Таблица с такой ссылкой уже есть. Её имя {tables_by_ref[ref].name}."
+            " Чтобы создать новую, введите другую ссылку")
+        return REF_CHOOSING
+    context.user_data["current_ref"] = ref
+    try:
+        await create_new_table(update, context)
+    except gspread.SpreadsheetNotFound:
+        await update.effective_message.reply_text(
+            "Эта ссылка не открывается с помощью гугл таблиц."
+            " Проверьте её корректность и введите ссылку")
+        return REF_CHOOSING
+    return ConversationHandler.END
+
+
 async def create_new_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Create new table"""
     chat_id = update.effective_message.chat_id
-    ref, name = context.args[:2]
+    ref, name = context.user_data["current_ref"], context.user_data["current_name"]
     table = Table(ref, name)
+    table.test()
 
     table_by_name, table_by_ref = get_tables_from_user(context)
-    if name not in table_by_name and name not in table_by_ref:
-        table_by_name[name] = table
-        context.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
-                                        chat_id=chat_id,
-                                        data=table)
-        await update.effective_message.reply_text("Таблица успешно создана!")
-    elif name in table_by_name:
-        await update.effective_message.reply_text("Таблица с таким именем уже существует," +
-                                                  "попробуйте другое имя")
-    else:
-        await update.effective_message.reply_text("Таблица с такой ссылкой уже существует," +
-                                                  f"её имя {table_by_ref[ref].name}")
+    table_by_name[name] = table
+    context.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
+                                    chat_id=chat_id,
+                                    data=table)
+    await update.effective_message.reply_text("Таблица успешно создана!")
 
 
 async def update_table(context: ContextTypes.DEFAULT_TYPE):
@@ -117,7 +156,7 @@ async def how_to_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return HOW_TO_CHOOSE_TABLE
 
 
-async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_checker_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     try:
         context.user_data["current_table"] = get_tables_from_user(context)[0][name]
@@ -128,7 +167,7 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return TABLE_CHOOSING_BY_NAME
 
 
-async def get_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_checker_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ref = update.message.text
     try:
         context.user_data["current_table"] = get_tables_from_user(context)[1][ref]
@@ -139,7 +178,7 @@ async def get_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return TABLE_CHOOSING_BY_REF
 
 
-async def get_worksheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_checker_worksheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         index = int(update.message.text)
         context.user_data["current_worksheet"] = index
@@ -154,7 +193,7 @@ async def get_worksheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WORKSHEET_CHOOSING
 
 
-async def get_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_checker_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = update.message.text
     match answer:
         case "Одна ячейка":
@@ -220,18 +259,25 @@ if __name__ == '__main__':
     with open("token.txt") as f:
         app = Application.builder().token(f.readline()).build()
 
-    # todo: add start and help
-    app.add_handler(CommandHandler("new_table", create_new_table))
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("add_table", start_creating_table)],
+        states={
+            NAME_CHOOSING: [MessageHandler(filters.TEXT, get_table_name)],
+            REF_CHOOSING: [MessageHandler(filters.TEXT, get_table_ref)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(conv_handler)
     app.add_handler(CommandHandler("info", help_info))
     app.add_handler(CommandHandler("start", start))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_checker", add_checker)],
         states={
             HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
-            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, get_name)],
-            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_ref)],
-            WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_worksheet)],
-            TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_type)],
+            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, get_checker_name)],
+            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_checker_ref)],
+            WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_checker_worksheet)],
+            TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_checker_type)],
             CELL: [MessageHandler(filters.TEXT, cell_checker)],
             ROW: [MessageHandler(filters.TEXT, row_checker)],
             COLUMN: [MessageHandler(filters.TEXT, col_checker)],
