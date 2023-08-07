@@ -114,7 +114,8 @@ async def update_table(context: ContextTypes.DEFAULT_TYPE):
 
 async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
-        "Это бот для наблюдением за гугл таблицами. Чтобы создать таблицу используй команду"
+        "Это бот для наблюдением за гугл таблицами. Чтобы следить за таблицей, нужно"
+        " создать таблицу и затем создать на неё чекер Чтобы создать таблицу используй команду"
         "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
         " команды /delete_table и /delete_checker."
     )
@@ -122,7 +123,8 @@ async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
-        "Привет, это бот для наблюдением за гугл таблицами. Чтобы создать таблицу используй команду"
+        "Привет, это бот для наблюдением за гугл таблицами. Чтобы следить за таблицей, нужно"
+        " создать таблицу и затем создать на неё чекер Чтобы создать таблицу используй команду"
         "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
         " команды /delete_table и /delete_checker."
     )
@@ -258,8 +260,43 @@ async def all_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text("Хорошо, в другой раз добавим")
+def cancel(message: str = "Хорошо, в другой раз добавим"):
+    async def inner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.effective_message.reply_text(message)
+        return ConversationHandler.END
+
+    return inner
+
+
+async def start_deleting_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reply_keyboard = [["Имя", "Ссылка"]]
+    await update.effective_message.reply_text("Удалить по ссылке или по имени?"
+                                              "(Для отмены /cancel)",
+                                              reply_markup=
+                                              ReplyKeyboardMarkup(reply_keyboard,
+                                                                  one_time_keyboard=True))
+    return HOW_TO_CHOOSE_TABLE
+
+
+async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text
+    tables_by_name = get_tables_from_user(context)[0]
+    if name not in tables_by_name:
+        await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
+        return TABLE_CHOOSING_BY_NAME
+    del tables_by_name[name]
+    await update.effective_message.reply_text("Таблица успешно удалена")
+    return ConversationHandler.END
+
+
+async def del_by_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = update.message.text
+    tables_by_ref = get_tables_from_user(context)[1]
+    if ref not in tables_by_ref:
+        await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
+        return TABLE_CHOOSING_BY_REF
+    del tables_by_ref[ref]
+    await update.effective_message.reply_text("Таблица успешно удалена")
     return ConversationHandler.END
 
 
@@ -273,7 +310,7 @@ if __name__ == '__main__':
             NAME_CHOOSING: [MessageHandler(filters.TEXT, get_table_name)],
             REF_CHOOSING: [MessageHandler(filters.TEXT, get_table_ref)]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel())]
     )
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("help", help_info))
@@ -291,8 +328,17 @@ if __name__ == '__main__':
             COLUMN: [MessageHandler(filters.TEXT, col_checker)],
             ALL: [MessageHandler(filters.TEXT, all_checker)]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel())]
     )
     app.add_handler(conv_handler)
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("delete_table", start_deleting_table)],
+        states={
+            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
+            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, del_by_name)],
+            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, del_by_ref)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
+    )
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
