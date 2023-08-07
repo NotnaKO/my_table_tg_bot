@@ -26,6 +26,9 @@ class Table:
     def add_checker(self, checker):
         self.checkers.append(checker)
 
+    def del_checker(self, checker):
+        self.checkers.remove(checker)
+
     def update(self) -> None:
         for checker in self.checkers:
             checker.update()
@@ -226,7 +229,7 @@ async def get_checker_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return TYPE_CHOOSING
 
 
-async def cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = update.message.text
     table = context.user_data["current_table"]
     table.add_checker(
@@ -235,7 +238,7 @@ async def cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def row_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_row_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = int(update.message.text)
     table = context.user_data["current_table"]
     table.add_checker(
@@ -244,7 +247,7 @@ async def row_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answer = int(update.message.text)
     table = context.user_data["current_table"]
     table.add_checker(
@@ -253,7 +256,7 @@ async def col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def all_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     table = context.user_data["current_table"]
     table.add_checker(SheetChecker(table.reference, context.user_data["current_worksheet"]))
     await update.effective_message.reply_text("Готово!", reply_markup=ReplyKeyboardRemove())
@@ -300,6 +303,60 @@ async def del_by_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def del_cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    answer = update.message.text
+    table = context.user_data["current_table"]
+    try:
+        table.del_checker(
+            CellChecker(table.reference, context.user_data["current_worksheet"], answer))
+    except ValueError:
+        await update.effective_message.reply_text(
+            "Такого чекера нет. Попробуйте ещё раз. Выберете лист таблицы")
+        return WORKSHEET_CHOOSING
+    await update.effective_message.reply_text("Готово!")
+    return ConversationHandler.END
+
+
+async def del_row_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    answer = int(update.message.text)
+    table = context.user_data["current_table"]
+    try:
+        table.del_checker(
+            RowChecker(table.reference, context.user_data["current_worksheet"], answer))
+    except ValueError:
+        await update.effective_message.reply_text(
+            "Такого чекера нет. Попробуйте ещё раз. Выберете лист таблицы")
+        return WORKSHEET_CHOOSING
+    await update.effective_message.reply_text("Готово!")
+    return ConversationHandler.END
+
+
+async def del_col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    answer = int(update.message.text)
+    table = context.user_data["current_table"]
+    try:
+        table.del_checker(
+            ColChecker(table.reference, context.user_data["current_worksheet"], answer))
+    except ValueError:
+        await update.effective_message.reply_text(
+            "Такого чекера нет. Попробуйте ещё раз. Выберете лист таблицы")
+        return WORKSHEET_CHOOSING
+    await update.effective_message.reply_text("Готово!")
+    return ConversationHandler.END
+
+
+async def del_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    table = context.user_data["current_table"]
+    try:
+        table.del_checker(SheetChecker(table.reference, context.user_data["current_worksheet"]))
+    except ValueError:
+        await update.effective_message.reply_text(
+            "Такого чекера нет. Попробуйте ещё раз. Выберете лист таблицы")
+        return WORKSHEET_CHOOSING
+    await update.effective_message.reply_text("Готово!", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
+
 if __name__ == '__main__':
     with open("token.txt") as f:
         app = Application.builder().token(f.readline()).build()
@@ -323,10 +380,10 @@ if __name__ == '__main__':
             TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_checker_ref)],
             WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_checker_worksheet)],
             TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_checker_type)],
-            CELL: [MessageHandler(filters.TEXT, cell_checker)],
-            ROW: [MessageHandler(filters.TEXT, row_checker)],
-            COLUMN: [MessageHandler(filters.TEXT, col_checker)],
-            ALL: [MessageHandler(filters.TEXT, all_checker)]
+            CELL: [MessageHandler(filters.TEXT, add_cell_checker)],
+            ROW: [MessageHandler(filters.TEXT, add_row_checker)],
+            COLUMN: [MessageHandler(filters.TEXT, add_col_checker)],
+            ALL: [MessageHandler(filters.TEXT, add_worksheet_checker)]
         },
         fallbacks=[CommandHandler("cancel", cancel())]
     )
@@ -340,5 +397,22 @@ if __name__ == '__main__':
         },
         fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
     )
+    app.add_handler(conv_handler)
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("delete_checker", add_checker)],
+        states={
+            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
+            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, get_checker_name)],
+            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_checker_ref)],
+            WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_checker_worksheet)],
+            TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_checker_type)],
+            CELL: [MessageHandler(filters.TEXT, del_cell_checker)],
+            ROW: [MessageHandler(filters.TEXT, del_row_checker)],
+            COLUMN: [MessageHandler(filters.TEXT, del_col_checker)],
+            ALL: [MessageHandler(filters.TEXT, del_worksheet_checker)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
+    )
+    app.add_handler(conv_handler)
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
