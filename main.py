@@ -113,11 +113,19 @@ async def update_table(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text("Some help info")
+    await update.effective_message.reply_text(
+        "Это бот для наблюдением за гугл таблицами. Чтобы создать таблицу используй команду"
+        "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
+        " команды /delete_table и /delete_checker."
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text("Some help info")
+    await update.effective_message.reply_text(
+        "Привет, это бот для наблюдением за гугл таблицами. Чтобы создать таблицу используй команду"
+        "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
+        " команды /delete_table и /delete_checker."
+    )
 
 
 (HOW_TO_CHOOSE_TABLE, TABLE_CHOOSING_BY_REF, TABLE_CHOOSING_BY_NAME, WORKSHEET_CHOOSING,
@@ -268,7 +276,7 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler("cancel", cancel)]
     )
     app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("info", help_info))
+    app.add_handler(CommandHandler("help", help_info))
     app.add_handler(CommandHandler("start", start))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_checker", add_checker)],
