@@ -425,8 +425,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_table", start_creating_table)],
         states={
-            NAME_CHOOSING: [MessageHandler(filters.TEXT, get_table_name)],
-            REF_CHOOSING: [MessageHandler(filters.TEXT, get_table_ref)]
+            NAME_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_name)],
+            REF_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_ref)]
         },
         fallbacks=[CommandHandler("cancel", cancel())]
     )
@@ -436,15 +436,18 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_checker", add_checker)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
-            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, get_checker_name)],
-            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_checker_ref)],
-            WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_checker_worksheet)],
-            TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_checker_type)],
-            CELL: [MessageHandler(filters.TEXT, add_cell_checker)],
-            ROW: [MessageHandler(filters.TEXT, add_row_checker)],
-            COLUMN: [MessageHandler(filters.TEXT, add_col_checker)],
-            ALL: [MessageHandler(filters.TEXT, add_worksheet_checker)]
+            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
+            TABLE_CHOOSING_BY_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
+            TABLE_CHOOSING_BY_REF: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_ref)],
+            WORKSHEET_CHOOSING: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
+            TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
+            CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_cell_checker)],
+            ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_row_checker)],
+            COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_col_checker)],
+            ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_worksheet_checker)]
         },
         fallbacks=[CommandHandler("cancel", cancel())]
     )
@@ -452,9 +455,9 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("delete_table", start_deleting_table)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
-            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, del_by_name)],
-            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, del_by_ref)],
+            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
+            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_name)],
+            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_ref)],
         },
         fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
     )
@@ -463,15 +466,18 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("delete_checker", add_checker)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT, how_to_choose)],
-            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT, get_checker_name)],
-            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT, get_checker_ref)],
-            WORKSHEET_CHOOSING: [MessageHandler(filters.TEXT, get_checker_worksheet)],
-            TYPE_CHOOSING: [MessageHandler(filters.TEXT, get_checker_type)],
-            CELL: [MessageHandler(filters.TEXT, del_cell_checker)],
-            ROW: [MessageHandler(filters.TEXT, del_row_checker)],
-            COLUMN: [MessageHandler(filters.TEXT, del_col_checker)],
-            ALL: [MessageHandler(filters.TEXT, del_worksheet_checker)]
+            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
+            TABLE_CHOOSING_BY_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
+            TABLE_CHOOSING_BY_REF: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_ref)],
+            WORKSHEET_CHOOSING: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
+            TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
+            CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_cell_checker)],
+            ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_row_checker)],
+            COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_col_checker)],
+            ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_worksheet_checker)]
         },
         fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
     )
