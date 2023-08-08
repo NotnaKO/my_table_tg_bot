@@ -248,8 +248,6 @@ def cancel(message: str = "Хорошо, в другой раз добавим")
     return inner
 
 
-
-
 async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     tables_by_name, tables_by_ref = get_tables_from_user(update)
@@ -261,8 +259,6 @@ async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     del tables_by_name[name]
     await update.effective_message.reply_text("Таблица успешно удалена")
     return ConversationHandler.END
-
-
 
 
 async def del_cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -321,113 +317,134 @@ async def del_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
-def decode(data: dict):
-    if "type" not in data:
-        return data
-    if data["type"] == "Table":
-        tab = Table(data["ref"], data["name"])
-        for checker in data["checkers"]:
-            tab.add_checker(checker)
-        return tab
-    else:
-        if "target" in data:
-            return CellChecker(data["ref"], data["index"], data["target"])
-        elif "row_index" in data:
-            return RowChecker(data["ref"], data["index"], data["row_index"])
-        elif "col_index" in data:
-            return CellChecker(data["ref"], data["index"], data["col_index"])
+class BaseHelper:
+    @staticmethod
+    def decode(data: dict):
+        if "type" not in data:
+            return data
+        if data["type"] == "Table":
+            tab = Table(data["ref"], data["name"])
+            for checker in data["checkers"]:
+                tab.add_checker(checker)
+            return tab
         else:
-            return SheetChecker(data["ref"], data["index"])
+            if "target" in data:
+                return CellChecker(data["ref"], data["index"], data["target"])
+            elif "row_index" in data:
+                return RowChecker(data["ref"], data["index"], data["row_index"])
+            elif "col_index" in data:
+                return CellChecker(data["ref"], data["index"], data["col_index"])
+            else:
+                return SheetChecker(data["ref"], data["index"])
 
+    @staticmethod
+    def encode(obj) -> dict:
+        if isinstance(obj, Table):
+            return {"name": obj.name, "ref": obj.reference, "type": "Table",
+                    "checkers": obj.checkers}
+        if isinstance(obj, BaseChecker):
+            answer = {"ref": obj.reference, "index": obj.worksheet_index, "type": "Checker"}
+            if isinstance(obj, CellChecker):
+                answer["target"] = obj.target
+            elif isinstance(obj, RowChecker):
+                answer["row_index"] = obj.row_index
+            elif isinstance(obj, ColChecker):
+                answer["col_index"] = obj.col_index
+            return answer
+        return obj
 
-def encode(obj) -> dict:
-    if isinstance(obj, Table):
-        return {"name": obj.name, "ref": obj.reference, "type": "Table", "checkers": obj.checkers}
-    if isinstance(obj, BaseChecker):
-        answer = {"ref": obj.reference, "index": obj.worksheet_index, "type": "Checker"}
-        if isinstance(obj, CellChecker):
-            answer["target"] = obj.target
-        elif isinstance(obj, RowChecker):
-            answer["row_index"] = obj.row_index
-        elif isinstance(obj, ColChecker):
-            answer["col_index"] = obj.col_index
-        return answer
-    return obj
+    def __init__(self, app: Application):
+        self.app = app
 
-
-def main():
-    global base
-    with open("token.txt") as f:
-        app = Application.builder().token(f.readline()).build()
-
-    with open("base.json") as f:
-        base = json.load(f, object_hook=decode)
+    def __enter__(self):
+        global base
+        with open("base.json") as f:
+            base = json.load(f, object_hook=self.decode)
         logging.info("Base has loaded")
         for chat_id, tup in base.items():
             tab_by_name: dict = tup
             for table in tab_by_name.values():
-                app.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
-                                            chat_id=chat_id,
-                                            data=table)
+                self.app.job_queue.run_repeating(update_table,
+                                                 interval=datetime.timedelta(minutes=1),
+                                                 chat_id=chat_id,
+                                                 data=table)
         logging.info("Tables' jobs restored")
+        self.app.job_queue.run_repeating(self.as_dump, interval=datetime.timedelta(seconds=10))
+        logging.info("Base update's job has set")
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("add_table", start_creating_table)],
-        states={
-            NAME_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_name)],
-            REF_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_ref)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel())]
-    )
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("help", help_info))
-    app.add_handler(CommandHandler("start", start))
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("add_checker", add_checker)],
-        states={
-            TABLE_CHOOSING_BY_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
-            WORKSHEET_CHOOSING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
-            TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
-            CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_cell_checker)],
-            ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_row_checker)],
-            COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_col_checker)],
-            ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_worksheet_checker)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel())]
-    )
-    app.add_handler(conv_handler)
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("delete_table", add_checker)],
-        states={
-            TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_name)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
-    )
-    app.add_handler(conv_handler)
+    @staticmethod
+    async def as_dump(*args, **kwargs):
+        BaseHelper.dump()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("delete_checker", add_checker)],
-        states={
-            TABLE_CHOOSING_BY_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
-            WORKSHEET_CHOOSING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
-            TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
-            CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_cell_checker)],
-            ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_row_checker)],
-            COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_col_checker)],
-            ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_worksheet_checker)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
-    )
-    app.add_handler(conv_handler)
-
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-    with open("base.json", 'w') as f:
-        json.dump(base, f, default=encode, indent=2)
+    @staticmethod
+    def dump(*args, **kwargs):
+        with open("base.json", 'w') as f:
+            json.dump(base, f, default=BaseHelper.encode, indent=2)
         logging.info("Base has dumped")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.dump()
+
+
+def main():
+    with open("token.txt") as f:
+        app = Application.builder().token(f.readline()).build()
+    with BaseHelper(app):
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("add_table", start_creating_table)],
+            states={
+                NAME_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_name)],
+                REF_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_table_ref)]
+            },
+            fallbacks=[CommandHandler("cancel", cancel())]
+        )
+        app.add_handler(conv_handler)
+        app.add_handler(CommandHandler("help", help_info))
+        app.add_handler(CommandHandler("start", start))
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("add_checker", add_checker)],
+            states={
+                TABLE_CHOOSING_BY_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
+                WORKSHEET_CHOOSING: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
+                TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
+                CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_cell_checker)],
+                ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_row_checker)],
+                COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_col_checker)],
+                ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_worksheet_checker)]
+            },
+            fallbacks=[CommandHandler("cancel", cancel())]
+        )
+        app.add_handler(conv_handler)
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("delete_table", add_checker)],
+            states={
+                TABLE_CHOOSING_BY_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_name)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
+        )
+        app.add_handler(conv_handler)
+
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("delete_checker", add_checker)],
+            states={
+                TABLE_CHOOSING_BY_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
+                WORKSHEET_CHOOSING: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
+                TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
+                CELL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_cell_checker)],
+                ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_row_checker)],
+                COLUMN: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_col_checker)],
+                ALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_worksheet_checker)]
+            },
+            fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
+        )
+        app.add_handler(conv_handler)
+
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':
