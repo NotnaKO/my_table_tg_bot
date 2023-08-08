@@ -18,6 +18,10 @@ class BaseChecker(ABC):
         self.data = []
         self.answer = ''
 
+    def __eq__(self, other):
+        return (isinstance(other, BaseChecker) and self.reference == other.reference and
+                self.worksheet_index == other.worksheet_index)
+
     def update(self) -> None:
         sh = gc.open_by_url(self.reference)
         new_data = self.get_data(sh.get_worksheet(self.worksheet_index))
@@ -42,6 +46,10 @@ class CellChecker(BaseChecker):
         self.data = None
         self.update()
 
+    def __eq__(self, other):
+        return super().__eq__(other) and isinstance(other,
+                                                    CellChecker) and other.target == self.target
+
     def get_data(self, wh: gspread.Worksheet):
         return wh.acell(self.target).value
 
@@ -58,6 +66,10 @@ class RowChecker(BaseChecker):
         super().__init__(ref, worksheet)
         self.row_index = row_index
         self.update()
+
+    def __eq__(self, other):
+        return (super().__eq__(other)
+                and isinstance(other, RowChecker) and other.row_index == self.row_index)
 
     def get_data(self, wh: gspread.Worksheet):
         return wh.row_values(self.row_index)
@@ -83,6 +95,10 @@ class ColChecker(BaseChecker):
         self.col_index = col_index
         self.update()
 
+    def __eq__(self, other):
+        return (super().__eq__(other)
+                and isinstance(other, ColChecker) and self.col_index == other.col_index)
+
     def get_data(self, wh: gspread.Worksheet):
         return wh.col_values(self.col_index)
 
@@ -103,6 +119,9 @@ class SheetChecker(BaseChecker):
     def __init__(self, ref: str, worksheet: int):
         super().__init__(ref, worksheet)
         self.update()
+
+    def __eq__(self, other):
+        return super().__eq__(other) and isinstance(other, SheetChecker)
 
     def get_data(self, wh: gspread.Worksheet):
         return wh.get_all_values()

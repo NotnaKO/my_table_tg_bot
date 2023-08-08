@@ -1,5 +1,7 @@
 import datetime
+import json
 import logging
+from typing import Tuple, Dict
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, \
@@ -40,15 +42,24 @@ class Table:
         gc.open_by_url(self.reference)
 
 
-def get_tables_from_user(context: ContextTypes.DEFAULT_TYPE):
-    """:returns two dictionaries with tables by name and tables by references"""
-    if "tables_by_name" not in context.user_data:
-        context.user_data["tables_by_name"] = dict()
-        context.user_data["tables_by_ref"] = dict()
-    return context.user_data["tables_by_name"], context.user_data["tables_by_ref"]
+class BaseNotLoaded(Exception):
+    pass
+
+
+def get_tables_from_user(update: Update) -> Tuple[Dict[str, Table], Dict[str, Table]]:
+    """:returns two dictionaries with tables by name and tables by references
+    :raise BaseNotLoaded if base has not loaded
+    """
+    chat_id = str(update.effective_message.chat_id)
+    if not base:
+        raise BaseNotLoaded
+    if chat_id not in base:
+        base[chat_id] = [dict(), dict()]
+    return base[chat_id]
 
 
 NAME_CHOOSING, REF_CHOOSING = range(2)
+base = dict()
 
 
 async def start_creating_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,7 +71,7 @@ async def start_creating_table(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def get_table_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
-    tables_by_name = get_tables_from_user(context)[0]
+    tables_by_name = get_tables_from_user(update)[0]
     if name in tables_by_name:
         await update.effective_message.reply_text(
             "Таблица с таким именем уже есть. Выберете другое имя")
@@ -72,7 +83,7 @@ async def get_table_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_table_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ref = update.message.text
-    tables_by_ref = get_tables_from_user(context)[1]
+    tables_by_ref = get_tables_from_user(update)[1]
     if ref in tables_by_ref:
         await update.effective_message.reply_text(
             f"Таблица с такой ссылкой уже есть. Её имя {tables_by_ref[ref].name}."
@@ -96,8 +107,9 @@ async def create_new_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
     table = Table(ref, name)
     table.test()
 
-    table_by_name, table_by_ref = get_tables_from_user(context)
+    table_by_name, table_by_ref = get_tables_from_user(update)
     table_by_name[name] = table
+    table_by_ref[ref] = table
     context.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
                                     chat_id=chat_id,
                                     data=table)
@@ -106,7 +118,6 @@ async def create_new_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def update_table(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
-    # await context.bot.send_message(job.chat_id, f"Job with {job.data} has been executed")
     table: Table = job.data
     table.update()
     news = table.news()
@@ -150,14 +161,14 @@ async def how_to_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     match text:
         case "Имя":
-            table_by_name: dict = get_tables_from_user(context)[0]
+            table_by_name: dict = get_tables_from_user(update)[0]
             await update.effective_message.reply_text("Ваши таблицы:\n" +
                                                       '\n'.join(table_by_name.keys()) + '\n',
                                                       reply_markup=ReplyKeyboardRemove())
             await update.effective_message.reply_text("Выберете имя")
             return TABLE_CHOOSING_BY_NAME
         case "Ссылка":
-            table_by_ref: dict = get_tables_from_user(context)[1]
+            table_by_ref: dict = get_tables_from_user(update)[1]
             await update.effective_message.reply_text("Ваши таблицы:\n" +
                                                       '\n'.join(table_by_ref.keys()) + '\n',
                                                       reply_markup=ReplyKeyboardRemove())
@@ -172,7 +183,7 @@ async def how_to_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_checker_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     try:
-        context.user_data["current_table"] = get_tables_from_user(context)[0][name]
+        context.user_data["current_table"] = get_tables_from_user(update)[0][name]
         await update.effective_message.reply_text("Отлично! Теперь выберете номер листа")
         return WORKSHEET_CHOOSING
     except KeyError:
@@ -183,7 +194,7 @@ async def get_checker_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_checker_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ref = update.message.text
     try:
-        context.user_data["current_table"] = get_tables_from_user(context)[1][ref]
+        context.user_data["current_table"] = get_tables_from_user(update)[1][ref]
         await update.effective_message.reply_text("Отлично! Теперь выберете номер листа")
         return WORKSHEET_CHOOSING
     except KeyError:
@@ -283,10 +294,12 @@ async def start_deleting_table(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
-    tables_by_name = get_tables_from_user(context)[0]
+    tables_by_name, tables_by_ref = get_tables_from_user(update)
     if name not in tables_by_name:
         await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
         return TABLE_CHOOSING_BY_NAME
+    tab = tables_by_name[name]
+    del tables_by_ref[tab.reference]
     del tables_by_name[name]
     await update.effective_message.reply_text("Таблица успешно удалена")
     return ConversationHandler.END
@@ -294,11 +307,13 @@ async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def del_by_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ref = update.message.text
-    tables_by_ref = get_tables_from_user(context)[1]
+    tables_by_name, tables_by_ref = get_tables_from_user(update)
     if ref not in tables_by_ref:
         await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
         return TABLE_CHOOSING_BY_REF
+    tab = tables_by_ref[ref]
     del tables_by_ref[ref]
+    del tables_by_name[tab.name]
     await update.effective_message.reply_text("Таблица успешно удалена")
     return ConversationHandler.END
 
@@ -357,9 +372,55 @@ async def del_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
-if __name__ == '__main__':
+def decode(data: dict):
+    if "type" not in data:
+        return data
+    if data["type"] == "Table":
+        tab = Table(data["ref"], data["name"])
+        for checker in data["checkers"]:
+            tab.add_checker(checker)
+        return tab
+    else:
+        if "target" in data:
+            return CellChecker(data["ref"], data["index"], data["target"])
+        elif "row_index" in data:
+            return RowChecker(data["ref"], data["index"], data["row_index"])
+        elif "col_index" in data:
+            return CellChecker(data["ref"], data["index"], data["col_index"])
+        else:
+            return SheetChecker(data["ref"], data["index"])
+
+
+def encode(obj) -> dict:
+    if isinstance(obj, Table):
+        return {"name": obj.name, "ref": obj.reference, "type": "Table", "checkers": obj.checkers}
+    if isinstance(obj, BaseChecker):
+        answer = {"ref": obj.reference, "index": obj.worksheet_index, "type": "Checker"}
+        if isinstance(obj, CellChecker):
+            answer["target"] = obj.target
+        elif isinstance(obj, RowChecker):
+            answer["row_index"] = obj.row_index
+        elif isinstance(obj, ColChecker):
+            answer["col_index"] = obj.col_index
+        return answer
+    return obj
+
+
+def main():
+    global base
     with open("token.txt") as f:
         app = Application.builder().token(f.readline()).build()
+
+    with open("base.json") as f:
+        base = json.load(f, object_hook=decode)
+        logging.info("Base has loaded")
+        for chat_id, tup in base.items():
+            tab_by_name: dict = tup[0]
+            for table in tab_by_name.values():
+                app.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
+                                            chat_id=chat_id,
+                                            data=table)
+        logging.info("Tables' jobs restored")
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_table", start_creating_table)],
@@ -398,6 +459,7 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
     )
     app.add_handler(conv_handler)
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("delete_checker", add_checker)],
         states={
@@ -416,3 +478,10 @@ if __name__ == '__main__':
     app.add_handler(conv_handler)
 
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+    with open("base.json", 'w') as f:
+        json.dump(base, f, default=encode, indent=2)
+        logging.info("Base has dumped")
+
+
+if __name__ == '__main__':
+    main()
