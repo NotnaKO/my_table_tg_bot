@@ -131,7 +131,7 @@ class SheetChecker(BaseChecker):
         if len(new_data) != len(self.data):
             self.answer += (f"Изменен размер таблицы по вертикали с {len(self.data)}" +
                             f" на {len(new_data)}\n")
-        if len(new_data[0]) != len(self.data[0]):
+        if new_data and self.data and len(new_data[0]) != len(self.data[0]):
             self.answer += (f"Изменен размер таблицы по горизонтали с {len(self.data)}" +
                             f" на {len(new_data)}\n")
         row_index = col_index = 1

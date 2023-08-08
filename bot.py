@@ -1,7 +1,7 @@
 import datetime
 import json
 import logging
-from typing import Tuple, Dict
+from typing import Dict
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, \
@@ -46,15 +46,15 @@ class BaseNotLoaded(Exception):
     pass
 
 
-def get_tables_from_user(update: Update) -> Tuple[Dict[str, Table], Dict[str, Table]]:
-    """:returns two dictionaries with tables by name and tables by references
+def get_tables_from_user(update: Update) -> Dict[str, Table]:
+    """:returns two dictionaries with tables by name
     :raise BaseNotLoaded if base has not loaded
     """
     chat_id = str(update.effective_message.chat_id)
     if not base:
         raise BaseNotLoaded
     if chat_id not in base:
-        base[chat_id] = [dict(), dict()]
+        base[chat_id] = dict()
     return base[chat_id]
 
 
@@ -71,7 +71,7 @@ async def start_creating_table(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def get_table_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
-    tables_by_name = get_tables_from_user(update)[0]
+    tables_by_name = get_tables_from_user(update)
     if name in tables_by_name:
         await update.effective_message.reply_text(
             "Таблица с таким именем уже есть. Выберете другое имя")
@@ -83,12 +83,6 @@ async def get_table_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_table_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ref = update.message.text
-    tables_by_ref = get_tables_from_user(update)[1]
-    if ref in tables_by_ref:
-        await update.effective_message.reply_text(
-            f"Таблица с такой ссылкой уже есть. Её имя {tables_by_ref[ref].name}."
-            " Чтобы создать новую, введите другую ссылку")
-        return REF_CHOOSING
     context.user_data["current_ref"] = ref
     try:
         await create_new_table(update, context)
@@ -149,57 +143,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_keyboard = [["Имя", "Ссылка"]]
-    await update.effective_message.reply_text("Будете выбирать таблицу через имя или ссылку?"
-                                              "(Для выхода используйте /cancel)",
-                                              reply_markup=ReplyKeyboardMarkup(
-                                                  reply_keyboard, one_time_keyboard=True))
-    return HOW_TO_CHOOSE_TABLE
-
-
-async def how_to_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    match text:
-        case "Имя":
-            table_by_name: dict = get_tables_from_user(update)[0]
-            await update.effective_message.reply_text("Ваши таблицы:\n" +
-                                                      '\n'.join(table_by_name.keys()) + '\n',
-                                                      reply_markup=ReplyKeyboardRemove())
-            await update.effective_message.reply_text("Выберете имя")
-            return TABLE_CHOOSING_BY_NAME
-        case "Ссылка":
-            table_by_ref: dict = get_tables_from_user(update)[1]
-            await update.effective_message.reply_text("Ваши таблицы:\n" +
-                                                      '\n'.join(table_by_ref.keys()) + '\n',
-                                                      reply_markup=ReplyKeyboardRemove())
-            await update.effective_message.reply_text("Выберете ссылку")
-            return TABLE_CHOOSING_BY_REF
-        case _:
-            await update.effective_message.reply_text("Такого варианта нет. Попробуйте ещё",
-                                                      reply_markup=ReplyKeyboardRemove())
-            return HOW_TO_CHOOSE_TABLE
+    table_by_name: dict = get_tables_from_user(update)
+    await update.effective_message.reply_text("Ваши таблицы:\n" +
+                                              '\n'.join(table_by_name.keys()) + '\n',
+                                              reply_markup=ReplyKeyboardRemove())
+    await update.effective_message.reply_text("Выберете имя")
+    return TABLE_CHOOSING_BY_NAME
 
 
 async def get_checker_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
     try:
-        context.user_data["current_table"] = get_tables_from_user(update)[0][name]
+        context.user_data["current_table"] = get_tables_from_user(update)[name]
         await update.effective_message.reply_text("Отлично! Теперь выберете номер листа")
         return WORKSHEET_CHOOSING
     except KeyError:
         await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
         return TABLE_CHOOSING_BY_NAME
-
-
-async def get_checker_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ref = update.message.text
-    try:
-        context.user_data["current_table"] = get_tables_from_user(update)[1][ref]
-        await update.effective_message.reply_text("Отлично! Теперь выберете номер листа")
-        return WORKSHEET_CHOOSING
-    except KeyError:
-        await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
-        return TABLE_CHOOSING_BY_REF
 
 
 async def get_checker_worksheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,6 +193,10 @@ async def get_checker_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                                       reply_markup=ReplyKeyboardRemove())
             return COLUMN
         case "Весь лист":
+            reply_keyboard = [["Да", "Нет"]]
+            await update.effective_message.reply_text("Вы уверены?",
+                                                      reply_markup=ReplyKeyboardMarkup(
+                                                          reply_keyboard, one_time_keyboard=True))
             return ALL
         case _:
             await update.effective_message.reply_text("Такого варианта нет",
@@ -268,6 +232,8 @@ async def add_col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text != "Да":
+        return await cancel()(update, context)
     table = context.user_data["current_table"]
     table.add_checker(SheetChecker(table.reference, context.user_data["current_worksheet"]))
     await update.effective_message.reply_text("Готово!", reply_markup=ReplyKeyboardRemove())
@@ -282,14 +248,6 @@ def cancel(message: str = "Хорошо, в другой раз добавим")
     return inner
 
 
-async def start_deleting_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_keyboard = [["Имя", "Ссылка"]]
-    await update.effective_message.reply_text("Удалить по ссылке или по имени?"
-                                              "(Для отмены /cancel)",
-                                              reply_markup=
-                                              ReplyKeyboardMarkup(reply_keyboard,
-                                                                  one_time_keyboard=True))
-    return HOW_TO_CHOOSE_TABLE
 
 
 async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -305,17 +263,6 @@ async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def del_by_ref(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ref = update.message.text
-    tables_by_name, tables_by_ref = get_tables_from_user(update)
-    if ref not in tables_by_ref:
-        await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
-        return TABLE_CHOOSING_BY_REF
-    tab = tables_by_ref[ref]
-    del tables_by_ref[ref]
-    del tables_by_name[tab.name]
-    await update.effective_message.reply_text("Таблица успешно удалена")
-    return ConversationHandler.END
 
 
 async def del_cell_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -361,6 +308,8 @@ async def del_col_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def del_worksheet_checker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text != "Да":
+        return await cancel("Хорошо, в другой раз удалим")(update, context)
     table = context.user_data["current_table"]
     try:
         table.del_checker(SheetChecker(table.reference, context.user_data["current_worksheet"]))
@@ -415,7 +364,7 @@ def main():
         base = json.load(f, object_hook=decode)
         logging.info("Base has loaded")
         for chat_id, tup in base.items():
-            tab_by_name: dict = tup[0]
+            tab_by_name: dict = tup
             for table in tab_by_name.values():
                 app.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
                                             chat_id=chat_id,
@@ -436,11 +385,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add_checker", add_checker)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
             TABLE_CHOOSING_BY_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
-            TABLE_CHOOSING_BY_REF: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_ref)],
             WORKSHEET_CHOOSING: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
             TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
@@ -453,11 +399,9 @@ def main():
     )
     app.add_handler(conv_handler)
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("delete_table", start_deleting_table)],
+        entry_points=[CommandHandler("delete_table", add_checker)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
             TABLE_CHOOSING_BY_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_name)],
-            TABLE_CHOOSING_BY_REF: [MessageHandler(filters.TEXT & ~filters.COMMAND, del_by_ref)],
         },
         fallbacks=[CommandHandler("cancel", cancel("Хорошо, в другой раз удалим"))]
     )
@@ -466,11 +410,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("delete_checker", add_checker)],
         states={
-            HOW_TO_CHOOSE_TABLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, how_to_choose)],
             TABLE_CHOOSING_BY_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_name)],
-            TABLE_CHOOSING_BY_REF: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_ref)],
             WORKSHEET_CHOOSING: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_worksheet)],
             TYPE_CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_checker_type)],
