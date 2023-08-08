@@ -101,9 +101,8 @@ async def create_new_table(update: Update, context: ContextTypes.DEFAULT_TYPE):
     table = Table(ref, name)
     table.test()
 
-    table_by_name, table_by_ref = get_tables_from_user(update)
+    table_by_name = get_tables_from_user(update)
     table_by_name[name] = table
-    table_by_ref[ref] = table
     context.job_queue.run_repeating(update_table, interval=datetime.timedelta(minutes=1),
                                     chat_id=chat_id,
                                     data=table)
@@ -124,7 +123,7 @@ async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
         "Это бот для наблюдением за гугл таблицами. Чтобы следить за таблицей, нужно"
         " создать таблицу и затем создать на неё чекер Чтобы создать таблицу используй команду"
-        "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
+        " /add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
         " команды /delete_table и /delete_checker."
     )
 
@@ -250,12 +249,10 @@ def cancel(message: str = "Хорошо, в другой раз добавим")
 
 async def del_by_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text
-    tables_by_name, tables_by_ref = get_tables_from_user(update)
+    tables_by_name = get_tables_from_user(update)
     if name not in tables_by_name:
         await update.effective_message.reply_text("Такой таблицы нет. Попробуйте ещё раз")
         return TABLE_CHOOSING_BY_NAME
-    tab = tables_by_name[name]
-    del tables_by_ref[tab.reference]
     del tables_by_name[name]
     await update.effective_message.reply_text("Таблица успешно удалена")
     return ConversationHandler.END
