@@ -133,7 +133,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
         "Привет, это бот для наблюдением за гугл таблицами. Чтобы следить за таблицей, нужно"
         " создать таблицу и затем создать на неё чекер Чтобы создать таблицу используй команду"
-        "/add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
+        " /add_table. Чтобы добавить чекер введите команду /add_checker. Чтобы удалить используй"
         " команды /delete_table и /delete_checker."
     )
 
